@@ -1,40 +1,36 @@
-import asyncio
+import os
+import logging
+from fastapi import FastAPI
+import uvicorn
 from pyrogram import Client
-from config import API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_DIR, MAX_CONCURRENT_DOWNLOADS, LOGGER
-from database import db_init
-from workers import download_worker
-from handlers import register_handlers
+from config import API_ID, API_HASH, BOT_TOKEN
 
-app = Client("mediafire_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Configurar logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mediafire_web_bot")
 
-async def main():
-    LOGGER.info("📁 Creando directorio de descargas...")
-    DOWNLOAD_DIR.mkdir(exist_ok=True)
+# Instancia del bot
+bot = Client("mediafire_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-    LOGGER.info("🗄️ Inicializando base de datos...")
-    await db_init()
+# Crear app FastAPI
+app = FastAPI()
 
-    LOGGER.info("🤖 Iniciando cliente Pyrogram...")
-    await app.start()
-    me = await app.get_me()
-    LOGGER.info(f"✅ Bot iniciado como @{me.username}")
+@app.on_event("startup")
+async def startup():
+    logger.info("Iniciando bot de Telegram...")
+    await bot.start()
+    logger.info("✅ Bot iniciado correctamente.")
 
-    register_handlers(app)
+@app.on_event("shutdown")
+async def shutdown():
+    logger.info("Deteniendo bot de Telegram...")
+    await bot.stop()
+    logger.info("🛑 Bot detenido.")
 
-    LOGGER.info(f"🚚 Iniciando {MAX_CONCURRENT_DOWNLOADS} workers...")
-    workers = [
-        asyncio.create_task(download_worker(f"worker-{i}", app))
-        for i in range(MAX_CONCURRENT_DOWNLOADS)
-    ]
-
-    await asyncio.Event().wait()
-
-    for w in workers:
-        w.cancel()
-    await app.stop()
+@app.get("/")
+def root():
+    return {"status": "✅ El bot está funcionando correctamente."}
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        LOGGER.info("❌ Bot detenido manualmente.")
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
